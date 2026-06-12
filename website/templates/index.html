@@ -4,21 +4,21 @@
     <meta charset="UTF-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v={{ css_version }}">
     <title>Laptop Price Predictor</title>
 </head>
 <body>
     <div class="wrapper">
         <div class="title">Laptop Price Predictor</div>
-        <form action="/" method="POST">
-            <div class="form">
-                <div class="inputfield">
+        <form id="predictForm" action="/" method="POST">
+            <div class="form grid">
+                <div class="inputfield field">
                     <label for="ram">Ram (GB)</label>
-                    <input class="input" type="text" name="ram" required>
+                    <input id="ram" class="input" type="number" name="ram" min="1" step="1" placeholder="e.g. 8" required>
                 </div>
-                <div class="inputfield">
+                <div class="inputfield field">
                     <label for="weight">Weight (Kg)</label>
-                    <input class="input" type="text" name="weight" required>
+                    <input id="weight" class="input" type="number" name="weight" min="0.1" step="0.01" placeholder="e.g. 1.5" required>
                 </div>
                 <div class="inputfield">
                     <label for="company">Company</label>
@@ -98,21 +98,107 @@
                     </div>
                 </div>
     
-                <div class="inputfield">
-                    <input class="btn" type="submit" value="Precict Price">
+                <div class="inputfield full">
+                    <button id="predictBtn" class="btn" type="submit">
+                        <span class="btn-text">Predict Price</span>
+                        <span class="spinner" aria-hidden="true"></span>
+                    </button>
                 </div>
             </div>
         </form>
 
-        <div class="result">
+        <div class="result{% if pred_value != 0 %} fade-in{% endif %}">
             {% if error %}
                 <p style="color: #c00;">{{ error }}</p>
             {% elif pred_value != 0 %}
-                <p>Estimated Price (EUR): € {{ '%.3f'|format(pred_value) }}</p>
-                <p>Estimated Price (LKR): Rs {{ '%.3f'|format(pred_value_lkr) }}</p>
-                <p style="font-size:0.9em;color:#666;">Conversion rate: 1 EUR = {{ '%.3f'|format(eur_to_lkr_rate) }} LKR</p>
+                <div class="result-card" role="status" aria-live="polite">
+                    <div class="price-label">Estimated Price (EUR)</div>
+                    <div class="price-big" id="priceEur" data-value="{{ '%.3f'|format(pred_value) }}">€ {{ '%.3f'|format(pred_value) }}</div>
+                    <div class="price-sub">Rs <span id="priceLkr" data-value="{{ '%.3f'|format(pred_value_lkr) }}">{{ '%.3f'|format(pred_value_lkr) }}</span></div>
+                    <small>Conversion rate: 1 EUR = {{ '%.3f'|format(eur_to_lkr_rate) }} LKR</small>
+                </div>
             {% endif %}
         </div>
+
+        <script>
+        // Client-side validation + toggle loading state on submit.
+        (function(){
+            const form = document.getElementById('predictForm');
+            const btn = document.getElementById('predictBtn');
+            const ramInput = document.getElementById('ram');
+            const weightInput = document.getElementById('weight');
+
+            // Inline message element (create if missing)
+            let messageEl = document.getElementById('formMessage');
+            if(!messageEl){
+                messageEl = document.createElement('div');
+                messageEl.id = 'formMessage';
+                messageEl.style.color = '#b91c1c';
+                messageEl.style.marginTop = '10px';
+                messageEl.style.fontWeight = '600';
+                form.parentNode.insertBefore(messageEl, form.nextSibling);
+            }
+
+            if(!form || !btn) return;
+            form.addEventListener('submit', function(e){
+                // clear previous message
+                messageEl.textContent = '';
+
+                const ramVal = ramInput && ramInput.value ? Number(ramInput.value) : NaN;
+                const weightVal = weightInput && weightInput.value ? Number(weightInput.value) : NaN;
+
+                if(!Number.isFinite(ramVal) || ramVal <= 0){
+                    e.preventDefault();
+                    messageEl.textContent = 'Please enter a valid RAM value (positive integer).';
+                    ramInput.focus();
+                    return;
+                }
+                if(!Number.isFinite(weightVal) || weightVal <= 0){
+                    e.preventDefault();
+                    messageEl.textContent = 'Please enter a valid weight value (positive number).';
+                    weightInput.focus();
+                    return;
+                }
+
+                // show loading state and disable the submit button to prevent double submits
+                btn.classList.add('loading');
+                btn.disabled = true;
+            });
+        })();
+        </script>
+
+        <script>
+        // Animate numeric values for a smooth 'count up' effect when the page shows a result.
+        (function(){
+            function animateNumber(el, target, options){
+                options = options || {}; var duration = options.duration || 900; var start = 0; var startTime = null;
+                target = Number(target) || 0;
+                function step(ts){
+                    if(!startTime) startTime = ts;
+                    var progress = Math.min((ts - startTime)/duration, 1);
+                    var value = start + (target - start) * easeOutCubic(progress);
+                    el.textContent = formatNumber(value, options.decimals||3, options.prefix||'');
+                    if(progress < 1) requestAnimationFrame(step);
+                }
+                requestAnimationFrame(step);
+            }
+            function easeOutCubic(t){ return 1 - Math.pow(1-t,3); }
+            function formatNumber(v, decimals, prefix){
+                return prefix + Number(v).toLocaleString(undefined, {minimumFractionDigits: decimals, maximumFractionDigits: decimals});
+            }
+
+            var priceEur = document.getElementById('priceEur');
+            var priceLkr = document.getElementById('priceLkr');
+            if(priceEur){
+                var val = priceEur.getAttribute('data-value');
+                animateNumber(priceEur, Number(val.replace(/[^0-9.-]+/g,'')), {decimals:3, prefix:'€ '});
+            }
+            if(priceLkr){
+                var val2 = priceLkr.getAttribute('data-value');
+                animateNumber(priceLkr, Number(val2.replace(/[^0-9.-]+/g,'')), {decimals:0, prefix:''});
+            }
+        })();
+        </script>
     </div>
 </body>
 </html>

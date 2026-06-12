@@ -112,6 +112,13 @@ def index():
     delegates to `prediction()`.
     """
 
+    # compute CSS version based on static file mtime to bust browser cache
+    try:
+        css_path = os.path.join(os.path.dirname(__file__), '..', 'static', 'style.css')
+        css_version = int(os.path.getmtime(css_path))
+    except Exception:
+        css_version = 0
+
     if request.method == 'POST':
         ram = request.form.get('ram')
         weight = request.form.get('weight')
@@ -161,9 +168,39 @@ def index():
         gpuname_map = {'intel': 'intel', 'amd': 'amd', 'nvidia': 'NVIDIA GeForce'}
         gpu_canon = gpuname_map.get(gpu, gpu)
 
+        # Validate and convert numeric inputs. Return a friendly error if parsing fails.
+        try:
+            if ram is None or str(ram).strip() == '':
+                # Log diagnostics to help find out why RAM was missing from the form
+                try:
+                    form_dict = dict(request.form)
+                    values_dict = dict(request.values)
+                    raw_body = request.get_data(as_text=True)[:1000]
+                except Exception:
+                    form_dict = '<unavailable>'
+                    values_dict = '<unavailable>'
+                    raw_body = '<unavailable>'
+                app.logger.error('Missing RAM in submitted form. form=%s values=%s body_start=%s client=%s',
+                                 form_dict, values_dict, raw_body, request.remote_addr)
+                raise ValueError('RAM value is required')
+            ram_val = int(ram)
+        except (TypeError, ValueError) as e:
+            error = f'Invalid RAM value: {e}'
+            app.logger.error(error)
+            return render_template('index.html', pred_value=0, error=error, css_version=css_version)
+
+        try:
+            if weight is None or str(weight).strip() == '':
+                raise ValueError('Weight value is required')
+            weight_val = float(weight)
+        except (TypeError, ValueError) as e:
+            error = f'Invalid weight value: {e}'
+            app.logger.error(error)
+            return render_template('index.html', pred_value=0, error=error)
+
         input_row = {
-            'ram': int(ram),
-            'weight': float(weight),
+            'ram': ram_val,
+            'weight': weight_val,
             'touchscreen': touchscreen_flag,
             'ips': ips_flag,
             'company': company_canon,
@@ -180,19 +217,19 @@ def index():
             rate = get_eur_to_lkr_rate()
             pred_value_lkr = pred_value_eur * rate
             # Keep three decimal places for display
-            return render_template('index.html', pred_value=pred_value_eur, pred_value_lkr=pred_value_lkr, eur_to_lkr_rate=rate)
+            return render_template('index.html', pred_value=pred_value_eur, pred_value_lkr=pred_value_lkr, eur_to_lkr_rate=rate, css_version=css_version)
         else:
             error = result.get('error')
             # log and show error to user
             app.logger.error(error)
-            return render_template('index.html', pred_value=0, error=error)
+            return render_template('index.html', pred_value=0, error=error, css_version=css_version)
 
 
         
     
     # On GET, show empty values and include the current approximate rate
     rate = get_eur_to_lkr_rate()
-    return render_template('index.html', pred_value=0, pred_value_lkr=0, eur_to_lkr_rate=rate)
+    return render_template('index.html', pred_value=0, pred_value_lkr=0, eur_to_lkr_rate=rate, css_version=css_version)
 
 if __name__ == '__main__':
     app.run(debug=True)
