@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <title>Laptop Price Predictor</title>
 </head>
 <body>
@@ -105,8 +105,10 @@
         </form>
 
         <div class="result">
-            {% if pred_value != 0 %}
-            <p>Estimated Price : LKR {{pred_value}}</p>
+            {% if error %}
+                <p style="color: #c00;">{{ error }}</p>
+            {% elif pred_value != 0 %}
+                <p>Estimated Price : LKR {{ '%.3f'|format(pred_value) }}</p>
             {% endif %}
         </div>
     </div>
