@@ -112,10 +112,8 @@
                 <p style="color: #c00;">{{ error }}</p>
             {% elif pred_value != 0 %}
                 <div class="result-card" role="status" aria-live="polite">
-                    <div class="price-label">Estimated Price (EUR)</div>
-                    <div class="price-big" id="priceEur" data-value="{{ '%.3f'|format(pred_value) }}">€ {{ '%.3f'|format(pred_value) }}</div>
-                    <div class="price-sub">Rs <span id="priceLkr" data-value="{{ '%.3f'|format(pred_value_lkr) }}">{{ '%.3f'|format(pred_value_lkr) }}</span></div>
-                    <small>Conversion rate: 1 EUR = {{ '%.3f'|format(eur_to_lkr_rate) }} LKR</small>
+                    <div class="price-label">Estimated Price (LKR)</div>
+                    <div class="price-big" id="priceLkr" data-value="{{ '%.3f'|format(pred_value_lkr) }}">Rs {{ '%.3f'|format(pred_value_lkr) }}</div>
                 </div>
             {% endif %}
         </div>
@@ -187,15 +185,10 @@
                 return prefix + Number(v).toLocaleString(undefined, {minimumFractionDigits: decimals, maximumFractionDigits: decimals});
             }
 
-            var priceEur = document.getElementById('priceEur');
             var priceLkr = document.getElementById('priceLkr');
-            if(priceEur){
-                var val = priceEur.getAttribute('data-value');
-                animateNumber(priceEur, Number(val.replace(/[^0-9.-]+/g,'')), {decimals:3, prefix:'€ '});
-            }
             if(priceLkr){
                 var val2 = priceLkr.getAttribute('data-value');
-                animateNumber(priceLkr, Number(val2.replace(/[^0-9.-]+/g,'')), {decimals:0, prefix:''});
+                animateNumber(priceLkr, Number(val2.replace(/[^0-9.-]+/g,'')), {decimals:0, prefix:'Rs '});
             }
         })();
         </script>
