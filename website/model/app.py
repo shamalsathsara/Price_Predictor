@@ -1,20 +1,53 @@
+"""
+Web front-end for the laptop price predictor.
+
+This small Flask app loads a saved sklearn `Pipeline` (preprocessing + model)
+from `predictor.pickle` and exposes a single page where users can submit
+specs and get a predicted price. The app expects the pipeline to accept a
+pandas DataFrame row with columns:
+    ['ram','weight','touchscreen','ips','company','typename','opsys','cpuname','gpuname']
+
+Notes for maintainers:
+- Keep inference code minimal and pass raw form values as a single dict
+    to the pipeline — the `train_pipeline` defines canonical column names.
+- Errors while loading or predicting are returned to the template and
+    logged via `app.logger` for easier debugging.
+"""
+
 from flask import Flask, render_template  # type: ignore[import]
 from flask import request  # type: ignore[import]
 import pickle
 import os
+import json
+import urllib.request
+from urllib.error import URLError, HTTPError
+
+# Application instance: templates and static folders are relative to the
+# repository layout where `model/` contains this file and sibling `../templates`.
 app = Flask(__name__, template_folder="../templates", static_folder="../static")
 
 def prediction(input_row):
-    # ensure scikit-learn is available before unpickling
+    """Load the saved pipeline and return a prediction for `input_row`.
+
+    Parameters
+    - input_row: dict or list
+        If dict: keys should match the training columns (see module docstring).
+        If list: treated as a raw feature vector and passed directly to `predict`.
+
+    Returns
+    - dict: {'ok': bool, 'value': float} on success or {'ok': False, 'error': str}
+    """
+
+    # Quick dependency checks with helpful messages to the caller.
     try:
         import sklearn  # noqa: F401
     except ImportError:
         return {
             'ok': False,
-            'error': "Missing dependency: scikit-learn not installed. Run `pip install scikit-learn` in your environment."
+            'error': "Missing dependency: scikit-learn not installed. Run `pip install scikit-learn`."
         }
 
-    # resolve predictor.pickle relative to this module's directory
+    # Resolve the stored pipeline file next to this module.
     filename = os.path.join(os.path.dirname(__file__), 'predictor.pickle')
     try:
         with open(filename, 'rb') as file:
@@ -24,13 +57,13 @@ def prediction(input_row):
     except Exception as e:
         return {'ok': False, 'error': f"Failed to load model: {e}"}
 
-    # If the loaded object is a Pipeline that accepts raw DataFrame input, use it directly.
+    # The saved pipeline expects pandas DataFrame rows — ensure pandas is present.
     try:
         import pandas as pd
     except Exception:
-        return {'ok': False, 'error': 'Missing dependency: pandas required for preprocessing. Run `pip install pandas`.'}
+        return {'ok': False, 'error': 'Missing dependency: pandas required. Run `pip install pandas`.'}
 
-    # Accept either dict-like input_row or pre-built feature list
+    # If caller provided a dict, convert to single-row DataFrame for the pipeline.
     if isinstance(input_row, dict):
         df = pd.DataFrame([input_row])
         try:
@@ -38,18 +71,46 @@ def prediction(input_row):
             return {'ok': True, 'value': float(pred[0])}
         except Exception as e:
             return {'ok': False, 'error': f"Prediction error: {e}"}
-    else:
-        # fallback: if the caller passed a raw feature list, try to predict directly
-        try:
-            pred = model.predict([input_row])
-            return {'ok': True, 'value': float(pred[0])}
-        except Exception as e:
-            return {'ok': False, 'error': f"Prediction error: {e}"}
+
+    # Otherwise, assume the caller provided a raw feature vector and try directly.
+    try:
+        pred = model.predict([input_row])
+        return {'ok': True, 'value': float(pred[0])}
+    except Exception as e:
+        return {'ok': False, 'error': f"Prediction error: {e}"}
+
+
+def get_eur_to_lkr_rate(timeout=5):
+    """Fetch current EUR->LKR rate from exchangerate.host with a safe fallback.
+
+    Returns a float exchange rate (LKR per 1 EUR). If network fetch fails,
+    returns a sensible default and logs the issue via `app.logger`.
+    """
+    DEFAULT_RATE = 415.0  # fallback rate; update if stale
+    url = 'https://api.exchangerate.host/latest?base=EUR&symbols=LKR'
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as resp:
+            data = json.load(resp)
+            rate = data.get('rates', {}).get('LKR')
+            if rate:
+                return float(rate)
+            else:
+                app.logger.warning('EUR->LKR rate missing in response; using default')
+                return DEFAULT_RATE
+    except (URLError, HTTPError, ValueError, json.JSONDecodeError) as e:
+        app.logger.warning('Failed to fetch EUR->LKR rate (%s); using default %.2f', e, DEFAULT_RATE)
+        return DEFAULT_RATE
 
 
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
+    """Render the index page and handle form submissions.
+
+    The HTML form posts raw string values; this handler canonicalizes
+    those values into the same format used during training and then
+    delegates to `prediction()`.
+    """
 
     if request.method == 'POST':
         ram = request.form.get('ram')
@@ -114,18 +175,24 @@ def index():
 
         result = prediction(input_row)
         if result.get('ok'):
-            pred_value = result.get('value')
-            return render_template('index.html', pred_value=pred_value)
+            pred_value_eur = float(result.get('value'))
+            # Convert to LKR using live rate with fallback
+            rate = get_eur_to_lkr_rate()
+            pred_value_lkr = pred_value_eur * rate
+            # Keep three decimal places for display
+            return render_template('index.html', pred_value=pred_value_eur, pred_value_lkr=pred_value_lkr, eur_to_lkr_rate=rate)
         else:
             error = result.get('error')
             # log and show error to user
-            print('Prediction error:', error)
+            app.logger.error(error)
             return render_template('index.html', pred_value=0, error=error)
 
 
         
     
-    return render_template('index.html', pred_value=0)
+    # On GET, show empty values and include the current approximate rate
+    rate = get_eur_to_lkr_rate()
+    return render_template('index.html', pred_value=0, pred_value_lkr=0, eur_to_lkr_rate=rate)
 
 if __name__ == '__main__':
     app.run(debug=True)

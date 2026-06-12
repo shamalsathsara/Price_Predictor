@@ -108,7 +108,9 @@
             {% if error %}
                 <p style="color: #c00;">{{ error }}</p>
             {% elif pred_value != 0 %}
-                <p>Estimated Price : LKR {{ '%.3f'|format(pred_value) }}</p>
+                <p>Estimated Price (EUR): € {{ '%.3f'|format(pred_value) }}</p>
+                <p>Estimated Price (LKR): Rs {{ '%.3f'|format(pred_value_lkr) }}</p>
+                <p style="font-size:0.9em;color:#666;">Conversion rate: 1 EUR = {{ '%.3f'|format(eur_to_lkr_rate) }} LKR</p>
             {% endif %}
         </div>
     </div>

@@ -1,15 +1,25 @@
 """
-Train and save a sklearn Pipeline that includes preprocessing (ColumnTransformer)
-and a RandomForestRegressor. The pipeline will be saved to `model/predictor.pickle`.
+Train and save a sklearn Pipeline (preprocessing + estimator) for laptop price prediction.
 
-Usage:
-    python model/train_pipeline.py --data path/to/train.csv --out model/predictor.pickle
+This script:
+- loads a CSV with laptop specifications and prices,
+- normalizes common format variations (e.g. '8GB' -> 8, '1.37kg' -> 1.37),
+- canonicalizes CPU/GPU/OS labels to a small set of values used during training,
+- builds a `ColumnTransformer` that passthroughs numeric features and one-hot
+    encodes categorical features, then
+- fits a `RandomForestRegressor` and saves the full `Pipeline` to disk.
 
-CSV expected columns: `ram,weight,company,typename,opsys,cpuname,gpuname,price`.
-Optional: `touchscreen,ips` (0/1).
+Save a pipeline with:
+        python model/train_pipeline.py --data data/laptops.csv --out model/predictor.pickle
+
+The pipeline expects input rows with columns:
+    ['ram','weight','touchscreen','ips','company','typename','opsys','cpuname','gpuname']
+
+Use this script to regenerate `model/predictor.pickle` when the dataset changes.
 """
 
 import argparse
+import logging
 import os
 import pickle
 import sys
@@ -29,7 +39,14 @@ CATEGORICAL_COLS = ['company', 'typename', 'opsys', 'cpuname', 'gpuname']
 
 
 def build_pipeline():
-    # OneHotEncoder will handle unknown categories by ignoring them at transform time
+    """Create and return the sklearn Pipeline used for training and inference.
+
+    The ColumnTransformer passthroughs numeric columns and one-hot encodes the
+    categorical columns. `handle_unknown='ignore'` makes the pipeline robust
+    to unseen categories at inference time.
+    """
+
+    # Preprocessing: numeric passthrough, categorical OHE with ignore-of-unknowns
     preprocessor = ColumnTransformer(
         transformers=[
             ('num', 'passthrough', NUMERIC_COLS),
@@ -39,6 +56,7 @@ def build_pipeline():
         sparse_threshold=0,
     )
 
+    # Model: a reasonably strong default regressor for tabular data
     model = RandomForestRegressor(n_estimators=100, random_state=42)
 
     pipe = Pipeline([('pre', preprocessor), ('model', model)])
@@ -46,8 +64,11 @@ def build_pipeline():
 
 
 def main(args):
+    logger = logging.getLogger(__name__)
+    logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
+
     if not os.path.exists(args.data):
-        print(f"Training data not found: {args.data}")
+        logger.error("Training data not found: %s", args.data)
         sys.exit(1)
 
     # try utf-8 first, fall back to latin-1 for files with special characters
@@ -81,27 +102,30 @@ def main(args):
     required = ['ram', 'weight', 'company', 'typename', 'opsys', 'cpuname', 'gpuname', 'price']
     missing = [c for c in required if c not in df.columns]
     if missing:
-        print(f"Missing required columns in CSV: {missing}")
+        logger.error("Missing required columns in CSV: %s", missing)
         sys.exit(1)
 
-    # clean and normalize columns
-    # Ram: strings like '8GB' -> 8
+    # Clean and normalize columns so that training labels match what the
+    # inference code expects. These helpers are forgiving to noisy CSV values.
+
     def clean_ram(x):
+        """Turn '8GB' or similar into integer 8. Return 0 on parse failure."""
         try:
             s = str(x)
             return int(''.join(ch for ch in s if ch.isdigit()))
         except Exception:
             return 0
 
-    # Weight: strings like '1.37kg' -> 1.37
     def clean_weight(x):
+        """Turn '1.37kg' into float 1.37. Return 0.0 on parse failure."""
         try:
-            s = str(x).lower().replace('kg','').strip()
+            s = str(x).lower().replace('kg', '').strip()
             return float(s)
         except Exception:
             return 0.0
 
     def normalize_cpu(x):
+        """Map many CPU name variants into a small set of canonical labels."""
         s = str(x).lower()
         if 'intel' in s and 'i7' in s:
             return 'Intel Core i7'
@@ -116,6 +140,7 @@ def main(args):
         return 'Other'
 
     def normalize_gpu(x):
+        """Simplify GPU vendor/series into a compact set of labels."""
         s = str(x).lower()
         if 'nvidia' in s or 'geforce' in s:
             return 'NVIDIA GeForce'
@@ -126,6 +151,7 @@ def main(args):
         return 'Other'
 
     def normalize_opsys(x):
+        """Canonical OS names used in training labels."""
         s = str(x).lower()
         if 'windows' in s:
             return 'Windows'
@@ -137,6 +163,7 @@ def main(args):
             return 'No OS'
         return 'Other'
 
+    # Apply normalization helpers to the DataFrame columns.
     df['ram'] = df['ram'].apply(clean_ram)
     df['weight'] = df['weight'].apply(clean_weight)
     df['cpuname'] = df['cpuname'].apply(normalize_cpu)
@@ -161,7 +188,7 @@ def main(args):
     preds = pipe.predict(X_test)
     # mean_squared_error no longer accepts `squared` in this sklearn version
     rmse = mean_squared_error(y_test, preds) ** 0.5
-    print(f"Validation RMSE: {rmse:.4f}")
+    logger.info("Validation RMSE: %.4f", rmse)
 
     out_dir = os.path.dirname(args.out)
     if out_dir and not os.path.exists(out_dir):
@@ -170,7 +197,7 @@ def main(args):
     with open(args.out, 'wb') as f:
         pickle.dump(pipe, f)
 
-    print(f"Saved pipeline to {args.out}")
+    logger.info("Saved pipeline to %s", args.out)
 
 
 if __name__ == '__main__':
