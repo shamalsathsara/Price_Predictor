@@ -12,7 +12,7 @@
             <h1>Price Predictor</h1>
         </div>
         
-        <form action="/">
+        < action="/">
             <div class="inputfield">
                 <for="ram">Ram (GB)</for>
                 <input type="text" class="input" name="ram">
@@ -21,6 +21,30 @@
                 <for="weight">Weight (kg)</for>
                 <input type="text" class="input" name="weight" required>
             </div>
+            <div class="inputfield">
+                <for="touchscreen">Touchscreen</for>
+                <input type="checkbox"  name="touchscreen" >
+            </div>
+            <div class="inputfield">
+                <for="ips">IPS</for>
+                <input type="checkbox"  name="ips" >    
+            </div>    
+                <div class="inputfield">
+                    <label for="company">Company</label>
+                    <div class="custom_select"> 
+                    <select name="company" id="company" >
+                        <option value="" Selected hidden>Select</option>
+                        <option value="Apple">Apple</option>
+                        <option value="Dell">Dell</option>
+                        <option value="HP">HP</option>
+                        <option value="Acer">Acer</option>
+                        <option value="Lenovo">Lenovo</option>
+                        <option value="Msi">MSI</option>
+                        <option value="Toshiba">Toshiba</option>
+                        <option value="Asus">Asus</option>
+                        <option value="Other">Other</option>
+                    </select>
+                </div>
         </form>
 
 
